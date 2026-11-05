@@ -855,5 +855,78 @@ class DetectSystemProxyTests(unittest.TestCase):
         self.assertIsNone(self.detect(settings))
 
 
+class NetscapeCookieParseTests(unittest.TestCase):
+    def test_roundtrip_keeps_http_only_flag(self):
+        cookies = [
+            {
+                "domain": ".douyin.com",
+                "path": "/",
+                "secure": True,
+                "httpOnly": True,
+                "expires": 4102444800,
+                "name": "sessionid",
+                "value": "abc123",
+            }
+        ]
+        parsed = be.parse_netscape_cookies(be.format_netscape_cookies(cookies))
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0]["name"], "sessionid")
+        self.assertEqual(parsed[0]["value"], "abc123")
+        self.assertEqual(parsed[0]["domain"], ".douyin.com")
+        self.assertTrue(parsed[0]["httpOnly"])
+        self.assertTrue(parsed[0]["secure"])
+
+    def test_expired_cookie_is_skipped(self):
+        text = (
+            "# Netscape HTTP Cookie File\n"
+            ".douyin.com\tTRUE\t/\tTRUE\t1000000000\tsessionid\told\n"
+            ".douyin.com\tTRUE\t/\tTRUE\t4102444800\tsessionid_ss\tnew\n"
+        )
+        parsed = be.parse_netscape_cookies(text)
+        self.assertEqual([item["name"] for item in parsed], ["sessionid_ss"])
+
+    def test_comments_and_short_lines_are_ignored(self):
+        self.assertEqual(be.parse_netscape_cookies("# comment\n#\nnot-a-cookie\n\n"), [])
+
+    def test_restore_saved_cookies_sets_them(self):
+        workdir = Path(__file__).resolve().parents[1] / ".tmp" / "cookie-restore-tests"
+        workdir.mkdir(parents=True, exist_ok=True)
+        cookie_file = workdir / "cookies.txt"
+        cookie_file.write_text(
+            be.format_netscape_cookies(
+                [
+                    {
+                        "domain": ".douyin.com",
+                        "path": "/",
+                        "secure": True,
+                        "httpOnly": True,
+                        "expires": 4102444800,
+                        "name": "sessionid",
+                        "value": "abc",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        try:
+            session = be.BrowserSession.__new__(be.BrowserSession)
+            session._profile = workdir
+            session._call = mock.Mock(return_value={"success": True})
+            self.assertEqual(session._restore_saved_cookies(), 1)
+            session._call.assert_called_once()
+            self.assertEqual(session._call.call_args.args[0], "Network.setCookie")
+        finally:
+            cookie_file.unlink(missing_ok=True)
+
+    def test_restore_without_cookie_file_is_noop(self):
+        workdir = Path(__file__).resolve().parents[1] / ".tmp" / "cookie-restore-empty"
+        workdir.mkdir(parents=True, exist_ok=True)
+        session = be.BrowserSession.__new__(be.BrowserSession)
+        session._profile = workdir
+        session._call = mock.Mock()
+        self.assertEqual(session._restore_saved_cookies(), 0)
+        session._call.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

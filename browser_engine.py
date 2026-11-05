@@ -381,6 +381,52 @@ def format_netscape_cookies(cookies: Iterable[Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
+    """把 Netscape cookies.txt 解析成可以直接交给 CDP 的 Cookie 字典列表。
+
+    只保留未过期的条目：文件可能是几周前导出的，过期 Cookie 灌回浏览器只会
+    让登录检查误判成功。
+    """
+    now = int(time.time())
+    parsed: list[dict[str, Any]] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip("\r\n")
+        if not line.strip():
+            continue
+        http_only = False
+        if line.startswith("#HttpOnly_"):
+            http_only = True
+            line = line[len("#HttpOnly_") :]
+        elif line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        domain, _flag, path, secure, expires, name, value = parts[:7]
+        domain = domain.strip()
+        name = name.strip()
+        if not domain or not name:
+            continue
+        try:
+            expiry = int(float(expires))
+        except ValueError:
+            expiry = 0
+        if expiry and expiry < now:
+            continue
+        parsed.append(
+            {
+                "name": name,
+                "value": value,
+                "domain": domain,
+                "path": path or "/",
+                "secure": secure.strip().upper() == "TRUE",
+                "httpOnly": http_only,
+                "expires": expiry or -1,
+            }
+        )
+    return parsed
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -706,6 +752,7 @@ class BrowserSession:
         self._profile: Path | None = None
         self._ws = None
         self._next_id = 0
+        self._debug_port: int | None = None
         self._start()
 
     @property
@@ -765,6 +812,7 @@ class BrowserSession:
                 stderr=subprocess.DEVNULL,
             )
             page = self._wait_for_page(port, timeout=30.0)
+            self._debug_port = port
 
             self._ws = self._websocket.create_connection(
                 page["webSocketDebuggerUrl"],
@@ -775,6 +823,7 @@ class BrowserSession:
             self._call("Page.enable")
             self._call("Runtime.enable")
             self._call("Network.enable")
+            self._restore_saved_cookies()
             if self.initial_url:
                 self.navigate(self.initial_url)
             # 留时间让页面写入 s_v_web_id / UIFID 等访客 Cookie。
@@ -784,6 +833,31 @@ class BrowserSession:
             if isinstance(exc, BrowserError):
                 raise
             raise BrowserError(f"启动浏览器失败：{exc}") from exc
+
+    def _restore_saved_cookies(self) -> int:
+        """把配置目录里的 cookies.txt 灌回浏览器。
+
+        Chromium 被强行结束时 Cookie 可能没落盘，只剩内存；用导出的文件补回去，
+        登录态才不会因为一次异常退出就丢掉。
+        """
+        if self._profile is None:
+            return 0
+        path = self._profile / "cookies.txt"
+        if not path.is_file():
+            return 0
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return 0
+        restored = 0
+        for cookie in parse_netscape_cookies(text):
+            try:
+                result = self._call("Network.setCookie", cookie, timeout=5)
+            except BrowserError:
+                continue
+            if result.get("success"):
+                restored += 1
+        return restored
 
     def _wait_for_page(self, port: int, timeout: float) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
@@ -946,34 +1020,77 @@ class BrowserSession:
             )
         raise BrowserError(f"抖音接口返回异常：{last_message}")
 
+    def _request_browser_close(self) -> bool:
+        """请求 Chromium 自己退出，好让它把 Cookie 写进配置目录。
+
+        直接 taskkill 只会丢掉内存里的登录态：下次用同一份配置仍然显示未登录，
+        所以关闭时先走 CDP 的 Browser.close，退出失败再强制结束。
+        """
+        port = self._debug_port
+        if not port:
+            return False
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/json/version", timeout=3
+            ) as response:
+                endpoint = json.loads(response.read().decode("utf-8")).get(
+                    "webSocketDebuggerUrl"
+                )
+            if not endpoint:
+                return False
+            ws = self._websocket.create_connection(
+                endpoint, timeout=5, suppress_origin=True
+            )
+            try:
+                ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
+            finally:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
     def close(self) -> None:
         ws = self._ws
         self._ws = None
+        proc = self._proc
+        self._proc = None
+        self._debug_port = None
+
+        graceful = proc is not None and self._request_browser_close()
         if ws is not None:
             try:
                 ws.close()
             except Exception:
                 pass
 
-        proc = self._proc
-        self._proc = None
         if proc is not None:
-            try:
-                if os.name == "nt":
-                    subprocess.run(
-                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=10,
-                    )
-                else:
-                    proc.terminate()
-                proc.wait(timeout=10)
-            except Exception:
+            exited = False
+            if graceful:
                 try:
-                    proc.kill()
+                    proc.wait(timeout=12)
+                    exited = True
                 except Exception:
-                    pass
+                    exited = False
+            if not exited:
+                try:
+                    if os.name == "nt":
+                        subprocess.run(
+                            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=10,
+                        )
+                    else:
+                        proc.terminate()
+                    proc.wait(timeout=10)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
 
         profile = self._profile
         self._profile = None

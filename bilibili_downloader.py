@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,6 +61,11 @@ QUALITY_HEIGHTS = {
     "best": None,
 }
 QUALITY_CHOICES = tuple(QUALITY_HEIGHTS)
+# 同一分辨率的高帧率档位：B 站用独立 qn，界面要能单独选。
+QUALITY_ALIASES = {
+    "1080p60": 116,
+    "720p60": 74,
+}
 # 超过 1080 的档位属于大会员专享。
 VIP_QUALITIES = ("1440", "2160")
 QUALITY_SHORT_LABELS = {"2160": "4K", "1440": "2K"}
@@ -762,12 +768,35 @@ def parse_quality_token(value: str) -> str:
     text = str(value).strip()
     if text in QUALITY_CHOICES:
         return text
+    alias = QUALITY_ALIASES.get(text.lower())
+    if alias is not None:
+        # 转成 qn，后面统一走按 qn 选档的路径（能区分 1080P30 / 1080P60）。
+        return str(alias)
     if text.isdigit() and int(text) in KNOWN_QNS:
         return str(int(text))
     raise argparse.ArgumentTypeError(
-        f"未知的清晰度：{value}（可选：{', '.join(QUALITY_CHOICES)}，"
+        f"未知的清晰度：{value}（可选：{', '.join(QUALITY_CHOICES)}、"
+        f"{', '.join(QUALITY_ALIASES)}，"
         "或 B 站 qn 数字如 116 / 120 / 125，可先用 --list-qualities 查看）"
     )
+
+
+def quality_target(quality: Any) -> tuple[int, int | None] | None:
+    """把清晰度档位或 qn 换成 (目标高度, 目标帧率)。
+
+    帧率为 None 表示不挑帧率；60 表示要 1080P60 / 720P60 这类高帧率档。
+    """
+    text = str(quality or "").strip()
+    alias = QUALITY_ALIASES.get(text.lower())
+    if alias is not None:
+        text = str(alias)
+    if text in QUALITY_HEIGHTS:
+        height = QUALITY_HEIGHTS[text]
+        return (int(height), None) if height else None
+    if text.isdigit() and int(text) in QN_HEIGHT_HINTS:
+        qn = int(text)
+        return QN_HEIGHT_HINTS[qn], (60 if qn in QN_HIGH_FPS_QNS else None)
+    return None
 
 
 def effective_qn(args: argparse.Namespace) -> int | None:
@@ -1417,6 +1446,77 @@ def _error_chain(error: BaseException, depth: int = 5) -> list[BaseException]:
     return chain
 
 
+def archive_file_name(quality: Any) -> str:
+    """已下载记录按清晰度分文件。
+
+    只用一份归档时，同一链接换清晰度会被 yt-dlp 直接当"已下载"跳过，
+    页面却报成功；分开记录才能让 1080P -> 4K 真的重下。
+    """
+    value = str(quality or "").strip()
+    if value in QUALITY_HEIGHTS and value != "best":
+        return f".bilibili-archive-{value}.txt"
+    if value.isdigit():
+        # 1080P60 / 4K 这类按 qn 选的档位也各记各的，换档才不会被归档挡住。
+        return f".bilibili-archive-qn{value}.txt"
+    return ARCHIVE_NAME
+
+
+def find_existing_medias(output_dir: Path, video_id: str) -> list[Path]:
+    """某个视频已经下载好的所有文件（作者分目录也找），新的在前。"""
+    if not video_id:
+        return []
+    suffix_patterns = (".mp4", ".mkv", ".webm", ".flv", ".m4a")
+    try:
+        files = [path for path in output_dir.rglob("*") if path.is_file()]
+    except OSError:
+        return []
+    matched = [
+        path
+        for path in files
+        if path.suffix.lower() in suffix_patterns and video_id in path.name
+    ]
+    return sorted(matched, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def find_existing_media(output_dir: Path, video_id: str) -> Path | None:
+    """在输出目录里找某个视频已经下载好的文件（作者分目录也找）。"""
+    medias = find_existing_medias(output_dir, video_id)
+    return medias[0] if medias else None
+
+
+def quality_outtmpl(template: str, label: str) -> str:
+    """给文件名加清晰度后缀，避免不同清晰度互相覆盖。"""
+    stem, separator, extension = template.rpartition(".")
+    if not separator:
+        return f"{template}_{label}"
+    return f"{stem}_{label}{separator}{extension}"
+
+
+def probe_media_info(
+    path: Path, ffmpeg_path: str | None = None
+) -> tuple[int | None, float | None]:
+    """用 ffmpeg -i 读出已有视频的 (高度, 帧率)；读不到的部分返回 None。"""
+    executable = ffmpeg_path or "ffmpeg"
+    try:
+        proc = subprocess.run(
+            [executable, "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    text = (proc.stderr or b"").decode("utf-8", "replace")
+    heights = [int(match.group(2)) for match in re.finditer(r"(\d{2,5})x(\d{2,5})", text)]
+    fps_values = [float(match.group(1)) for match in re.finditer(r"([\d.]+) fps", text)]
+    return (max(heights) if heights else None), (max(fps_values) if fps_values else None)
+
+
+def probe_media_height(path: Path, ffmpeg_path: str | None = None) -> int | None:
+    """用 ffmpeg -i 读出已有视频的分辨率高度；读不到返回 None。"""
+    return probe_media_info(path, ffmpeg_path)[0]
+
+
 def build_ydl_options(
     args: argparse.Namespace,
     output_dir: Path,
@@ -1471,7 +1571,7 @@ def build_ydl_options(
         options["skip_download"] = True
 
     if not args.force and not args.no_archive and not args.dry_run:
-        options["download_archive"] = str(output_dir / ARCHIVE_NAME)
+        options["download_archive"] = str(output_dir / archive_file_name(args.quality))
 
     return options
 
@@ -1670,12 +1770,65 @@ class Downloader:
 
         return self._with_fallback(action)
 
+    def _existing_for_url(self, url: str) -> list[tuple[Path, int | None, float | None]]:
+        video_id = extract_bvid(url) or ""
+        if not video_id:
+            av_id = extract_av_id(url)
+            video_id = f"av{av_id}" if av_id else ""
+        if not video_id:
+            return []
+        return [
+            (path, *probe_media_info(path, self.ffmpeg_path))
+            for path in find_existing_medias(self.output_dir, video_id)
+        ]
+
+    def _plan(self, url: str) -> tuple[str, str]:
+        """决定这次怎么下：("skip"|"fresh"|"quality", 清晰度标签)。
+
+        - skip：目录里已经有同清晰度的文件，不重复下载；
+        - fresh：目录里没有这个视频，用默认文件名；
+        - quality：已有其它清晰度的文件，另存一份带清晰度后缀的文件，不覆盖。
+        """
+        existing = self._existing_for_url(url)
+        if bool(getattr(self.args, "force", False)):
+            return "fresh", ""
+        target = quality_target(getattr(self.args, "quality", ""))
+        if not existing:
+            return "fresh", ""
+        if not target:
+            print(f"[画质] 目录里已有 {existing[0][0].name}，本次不会重复下载。")
+            return "skip", ""
+        wanted_height, wanted_fps = target
+        label = f"{wanted_height}P{'60' if wanted_fps else ''}"
+        for path, height, fps in existing:
+            if height is None:
+                continue
+            same_height = height == wanted_height
+            fps_ok = not wanted_fps or fps is None or fps >= wanted_fps - 5
+            if same_height and fps_ok:
+                print(f"[画质] 目录里已有 {height}P 的 {path.name}，本次不会重复下载。")
+                return "skip", ""
+        print(f"[画质] 目标 {label} 还没有：另存为带清晰度后缀的文件，不覆盖已有视频。")
+        return "quality", label
+
     def download(self, url: str) -> int:
         qn = effective_qn(self.args)
         selector = self.resolve_qn_selector(url, qn) if qn else None
+        plan, label = self._plan(url)
+        if plan == "skip":
+            # 同清晰度已在目录里，连归档都不用碰。
+            return 0
 
         def action(proxy: Any) -> int:
-            with self.yt_dlp.YoutubeDL(self._options(proxy, selector)) as ydl:
+            options = self._options(proxy, selector)
+            if plan == "quality":
+                # 另存一份：换文件名 + 不覆盖 + 不查归档（归档按 id 记账会直接跳过）。
+                template = str(options["outtmpl"]["default"])
+                options["outtmpl"]["default"] = quality_outtmpl(template, label)
+                options["overwrites"] = False
+                options["force_overwrites"] = False
+                options.pop("download_archive", None)
+            with self.yt_dlp.YoutubeDL(options) as ydl:
                 return ydl.download([url])
 
         return self._with_fallback(action)

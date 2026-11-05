@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f5f7">
+  <meta name="description" content="autoDownloads 本地视频下载台：一个页面下载 B 站与抖音，批量链接、UP 主合集、清晰度、实时日志，全部留在本机。">
+  <title>autoDownloads · 本地视频下载台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101214'/%3E%3Cpath d='M32 14v25M21 29l11 11 11-11M18 48h28' stroke='%23fff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='49' cy='16' r='6' fill='%234673a8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#workbench">跳到下载工作台</a>
+
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11M7 9l5 5 5-5M5 21h14"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M5.5 15a7.5 7.5 0 1 0 .5-8.5L4 10"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v9"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 3h5v18h-5"/><path d="M3 12h12M10 8l4 4-4 4"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8"/><path d="M19 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="m14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <div class="rail-scrim" id="railScrim" hidden></div>
+
+    <aside class="rail" id="sidebar" aria-label="主导航">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true"><span>A</span><i></i></span>
+        <span class="brand-copy">
+          <strong>autoDownloads</strong>
+          <small>LOCAL VIDEO ARCHIVE</small>
+        </span>
+      </a>
+
+      <div class="rail-group">
+        <p class="rail-label">Workspace</p>
+        <a class="rail-item active" href="#workbench" aria-current="page">
+          <svg class="icon"><use href="#i-grid"/></svg>
+          <span>下载台</span><em>01</em>
+        </a>
+        <button class="rail-item" type="button" data-jump-platform="bilibili">
+          <span class="rail-platform-mark bili">B</span>
+          <span>B 站</span><em>02</em>
+        </button>
+        <button class="rail-item" type="button" data-jump-platform="douyin">
+          <span class="rail-platform-mark douyin">D</span>
+          <span>抖音</span><em>03</em>
+        </button>
+      </div>
+
+      <div class="rail-rule"></div>
+
+      <div class="rail-group rail-status-group">
+        <p class="rail-label">Local status</p>
+        <div id="railStatus" class="rail-status">
+          <div class="rail-status-row"><span class="status-dot muted"></span><span>环境</span><em>读取中</em></div>
+          <div class="rail-status-row"><span class="status-dot muted"></span><span>B 站登录</span><em>读取中</em></div>
+          <div class="rail-status-row"><span class="status-dot muted"></span><span>抖音配置</span><em>读取中</em></div>
+        </div>
+      </div>
+
+      <div class="rail-foot">
+        <div class="local-note"><span class="status-dot ok"></span>只在本机运行</div>
+        <div class="rail-foot-row">
+          <button class="rail-exit" id="shutdownBtn" type="button">退出服务</button>
+          <span id="railVersion">v1.0.0</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="打开导航" aria-expanded="false">
+            <svg class="icon"><use href="#i-menu"/></svg>
+          </button>
+          <div class="crumb">
+            <span>LOCAL DOWNLOADER</span>
+            <strong>下载台</strong>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <span class="local-pill"><span class="status-dot ok"></span>仅本机</span>
+          <button class="small-btn" id="topOpenFolder" type="button">
+            <svg class="icon"><use href="#i-folder"/></svg><span>打开目录</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="page">
+        <section class="service-banner" id="serviceBanner" hidden>
+          <svg class="icon"><use href="#i-info"/></svg>
+          <div>
+            <strong>本地服务未连接</strong>
+            <span>请双击 <code>start.bat</code> 启动下载服务后再使用。</span>
+          </div>
+        </section>
+
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="eyebrow-rule"></span>DOWNLOAD WORKBENCH / 01</div>
+            <h1>把喜欢的视频，<br><em>留在本地。</em></h1>
+            <p class="hero-lede">一个页面，处理 B 站与抖音。批量链接、UP 主合集、清晰度、实时日志，文件只写入这台电脑。</p>
+            <div class="hero-meta">
+              <span><strong>02</strong> 支持平台</span>
+              <span><strong>01</strong> 本地目录</span>
+              <span><strong>00</strong> 云端上传</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="workbench" id="workbench">
+          <form class="composer card" id="downloadForm" autocomplete="off">
+            <div class="platform-tabs" role="tablist" aria-label="选择平台">
+              <button class="platform-tab active" type="button" role="tab" aria-selected="true" data-platform="bilibili">
+                <span class="platform-letter bili">B</span>
+                <span class="platform-copy"><strong>B 站</strong><small>视频 / UP 主</small></span>
+                <span class="platform-active"></span>
+              </button>
+              <button class="platform-tab" type="button" role="tab" aria-selected="false" data-platform="douyin">
+                <span class="platform-letter douyin">D</span>
+                <span class="platform-copy"><strong>抖音</strong><small>视频 / 主页</small></span>
+                <span class="platform-active"></span>
+              </button>
+            </div>
+
+            <div class="composer-body">
+              <div class="field-head">
+                <label for="links">链接</label>
+                <span id="linkCount">0 条链接</span>
+              </div>
+              <div class="textarea-shell">
+                <textarea id="links" rows="6" spellcheck="false" placeholder="粘贴 B 站视频 / UP 主空间链接，一行一个；也可以直接粘贴分享文案。"></textarea>
+                <div class="textarea-foot">
+                  <span><svg class="icon"><use href="#i-link"/></svg>支持分享文案，自动提取链接</span>
+                  <button class="text-btn" id="clearLinks" type="button">清空</button>
+                </div>
+              </div>
+
+              <div class="setting-block">
+                <div class="field-head">
+                  <label>清晰度</label>
+                  <span id="qualityHint">需要登录后才能取到更高画质</span>
+                </div>
+                <div class="quality-grid" id="qualityGrid" role="radiogroup" aria-label="清晰度"></div>
+              </div>
+
+              <div class="field">
+                <label for="output">保存目录</label>
+                <div class="input-action">
+                  <input id="output" type="text" spellcheck="false">
+                  <button class="input-btn" id="openFolderBtn" type="button">
+                    <svg class="icon"><use href="#i-folder"/></svg>打开
+                  </button>
+                </div>
+              </div>
+
+              <div class="login-strip" id="loginStrip">
+                <span class="status-dot muted"></span>
+                <div><strong id="loginTitle">正在读取登录态</strong><small id="loginText">请稍候…</small></div>
+                <button class="login-btn" id="loginBtn" type="button">
+                  <svg class="icon"><use href="#i-login"/></svg><span>登录</span>
+                </button>
+              </div>
+
+              <details class="advanced" id="advanced">
+                <summary>
+                  <span>高级选项</span>
+                  <small>UP 主 · 批量 · 网络</small>
+                  <svg class="icon chevron"><use href="#i-chevron-down"/></svg>
+                </summary>
+                <div class="advanced-body">
+                  <div class="field full">
+                    <label for="up" id="upLabel">UP 主</label>
+                    <input id="up" type="text" spellcheck="false" placeholder="mid 或空间链接（可选）">
+                  </div>
+
+                  <div class="field">
+                    <label for="limit">最多下载</label>
+                    <div class="number-field"><input id="limit" type="number" min="0" max="9999" value="0"><span>个</span></div>
+                    <small>0 表示不限，仅对合集 / 主页生效</small>
+                  </div>
+
+                  <div class="field douyin-only" id="engineField">
+                    <label for="engine">下载引擎</label>
+                    <select id="engine">
+                      <option value="auto">自动（推荐）</option>
+                      <option value="browser">浏览器解析</option>
+                      <option value="yt-dlp">yt-dlp</option>
+                    </select>
+                    <small>单视频优先用本机浏览器配置</small>
+                  </div>
+
+                  <div class="field">
+                    <label for="proxy">代理</label>
+                    <input id="proxy" type="text" spellcheck="false" placeholder="http://127.0.0.1:7890（可选）">
+                  </div>
+
+                  <div class="field">
+                    <label for="rate">限速</label>
+                    <input id="rate" type="text" spellcheck="false" placeholder="500K / 2M（可选）">
+                  </div>
+
+                  <div class="toggle-list full">
+                    <label class="switch">
+                      <input id="all" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong id="allLabel">下载该 UP 主全部视频</strong><small>适合空间链接或指定 UP 主</small></span>
+                    </label>
+                    <label class="switch">
+                      <input id="folderByAuthor" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong>按作者建立子文件夹</strong><small>批量时更好整理</small></span>
+                    </label>
+                    <label class="switch">
+                      <input id="force" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong>覆盖已下载</strong><small>忽略下载归档记录</small></span>
+                    </label>
+                    <label class="switch douyin-only">
+                      <input id="preferH264" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong>优先 H.264</strong><small>兼容性更好，可能牺牲分辨率</small></span>
+                    </label>
+                    <label class="switch douyin-only">
+                      <input id="info" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong>保存视频信息</strong><small>额外写入 .info.json</small></span>
+                    </label>
+                    <label class="switch douyin-only">
+                      <input id="thumbnail" type="checkbox">
+                      <span class="switch-track"></span>
+                      <span class="switch-copy"><strong>保存封面</strong><small>同时下载视频封面图</small></span>
+                    </label>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="composer-foot">
+              <p id="startHint">粘贴链接后即可开始。</p>
+              <button class="primary-btn" id="startBtn" type="submit" disabled>
+                <span>开始下载</span><svg class="icon"><use href="#i-arrow"/></svg>
+              </button>
+            </div>
+          </form>
+
+          <aside class="run-card card" id="runPanel" aria-label="下载运行状态">
+            <div class="run-head">
+              <span>RUN / 01</span>
+              <span class="run-state" id="jobState"><i></i>空闲</span>
+            </div>
+
+            <div class="run-metric">
+              <div class="percent-line"><span id="jobPercent">00</span><small>%</small></div>
+              <p id="jobStage">等待任务</p>
+            </div>
+
+            <div class="progress" role="progressbar" aria-label="下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="jobProgress">
+              <span id="jobBar"></span>
+            </div>
+
+            <div class="run-meta">
+              <div><span>平台</span><strong id="jobPlatform">—</strong></div>
+              <div><span>开始</span><strong id="jobStarted">—</strong></div>
+              <div class="meta-wide"><span>目录</span><strong id="jobOutput">—</strong></div>
+            </div>
+
+            <div class="log-head">
+              <span><svg class="icon"><use href="#i-terminal"/></svg>实时日志</span>
+              <div>
+                <button class="text-btn" id="copyLogBtn" type="button">复制</button>
+                <button class="text-btn" id="clearLogBtn" type="button">清空</button>
+              </div>
+            </div>
+            <div class="log" id="log" aria-live="polite">
+              <div class="log-empty" id="logEmpty">
+                <span class="prompt-mark">&gt;_</span>
+                <p>等待任务。下载日志会实时出现在这里。</p>
+              </div>
+            </div>
+
+            <div class="run-actions">
+              <button class="action-btn stop" id="stopBtn" type="button" disabled>
+                <svg class="icon"><use href="#i-stop"/></svg>停止
+              </button>
+              <button class="action-btn" id="runOpenFolder" type="button">
+                <svg class="icon"><use href="#i-folder"/></svg>打开目录
+              </button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="status-section" id="status">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow"><span class="eyebrow-rule"></span>ENV / 03</div>
+              <h2>本机环境</h2>
+            </div>
+            <p>下载器只在本机运行。这里的检查结果来自当前电脑，不会上传。</p>
+          </div>
+          <div class="env-grid" id="envGrid">
+            <article class="env-card"><span class="env-index">01 / FFMPEG</span><h3>读取中…</h3><p>正在检查视频合并工具。</p></article>
+            <article class="env-card"><span class="env-index">02 / B 站</span><h3>读取中…</h3><p>正在读取登录态。</p></article>
+            <article class="env-card"><span class="env-index">03 / 抖音</span><h3>读取中…</h3><p>正在读取浏览器配置。</p></article>
+          </div>
+        </section>
+
+        <section class="notes">
+          <article><span>01</span><h3>1080P 以上先登录</h3><p>B 站高画质依赖登录态。登录会打开一次浏览器，完成后回到这个页面即可。</p></article>
+          <article><span>02</span><h3>分享文案也能直接粘</h3><p>一条链接一行，也可以把带口令的分享文案整段贴进来，下载器会自动提取。</p></article>
+          <article><span>03</span><h3>文件只留在本机</h3><p>没有账号、没有云同步、没有上传。下载结果写入你选择的本地目录。</p></article>
+        </section>
+
+        <p class="legal">仅供个人备份和学习使用。请遵守平台用户协议、著作权法及当地法律法规，不要下载、传播无权使用的视频。</p>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-brand"><span class="brand-mark small" aria-hidden="true"><span>A</span><i></i></span><strong>autoDownloads</strong></div>
+        <span>LOCAL-FIRST · BILIBILI / DOUYIN</span>
+        <span id="footerVersion">v1.0.0</span>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal-layer" id="exitLayer" hidden>
+    <div class="modal-scrim" data-exit="cancel"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="exitTitle">
+      <span class="modal-kicker">LOCAL SERVICE / EXIT</span>
+      <h2 id="exitTitle">退出本地服务？</h2>
+      <p>页面会断开连接。正在下载的任务会被停止，已经写入的文件不会删除。</p>
+      <div class="modal-actions">
+        <button class="modal-btn" type="button" data-exit="cancel">取消</button>
+        <button class="modal-btn danger" type="button" id="confirmExit">退出服务</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-layer" id="folderLayer" hidden>
+    <div class="modal-scrim" data-folder="close"></div>
+    <section class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="folderTitle">
+      <span class="modal-kicker">LOCAL FILES / FOLDER</span>
+      <h2 id="folderTitle">下载目录</h2>
+      <p class="folder-path" id="folderPath"></p>
+      <div class="folder-list" id="folderList"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" type="button" data-folder="copy">复制路径</button>
+        <button class="modal-btn" type="button" data-folder="close">关闭</button>
+      </div>
+    </section>
+  </div>
+
+  <script id="boot-data" type="application/json">__BOOT_JSON__</script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import ssl
 import sys
 import tempfile
@@ -559,8 +560,16 @@ class YdlOptionsTests(unittest.TestCase):
         self.assertEqual(options["merge_output_format"], "mp4")
         self.assertEqual(options["ffmpeg_location"], r"D:\ff\ffmpeg.exe")
         self.assertNotIn("cookiefile", options)
-        self.assertTrue(options["download_archive"].endswith(bd.ARCHIVE_NAME))
+        self.assertTrue(options["download_archive"].endswith(bd.archive_file_name("1080")))
         self.assertTrue(options["windowsfilenames"])
+
+    def test_archive_differs_per_quality(self):
+        archives = set()
+        for quality in ("1080", "2160", "720"):
+            args = self.parse(["https://www.bilibili.com/video/BV1wh4P6XEkC", "--quality", quality])
+            options = bd.build_ydl_options(args, Path("out"), None, "ffmpeg")
+            archives.add(options["download_archive"])
+        self.assertEqual(len(archives), 3)
 
     def test_folded_archive_when_force_or_no_archive(self):
         for flag in ("--force", "--no-archive"):
@@ -1598,6 +1607,250 @@ class FetchQualityTiersTests(unittest.TestCase):
 
     def test_bad_link_returns_none(self):
         self.assertIsNone(bd.fetch_quality_tiers("https://example.com/x"))
+
+
+class QualityArchiveTests(unittest.TestCase):
+    def test_archive_is_split_by_quality(self):
+        self.assertEqual(bd.archive_file_name("1080"), ".bilibili-archive-1080.txt")
+        self.assertEqual(bd.archive_file_name("2160"), ".bilibili-archive-2160.txt")
+        self.assertEqual(bd.archive_file_name("best"), bd.ARCHIVE_NAME)
+
+    def test_archive_falls_back_for_unknown_quality(self):
+        self.assertEqual(bd.archive_file_name(""), bd.ARCHIVE_NAME)
+        self.assertEqual(bd.archive_file_name(None), bd.ARCHIVE_NAME)
+
+
+class ExistingMediaTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1] / ".tmp" / "existing-media-tests"
+        if self.root.exists():
+            shutil.rmtree(self.root, ignore_errors=True)
+        (self.root / "作者A").mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+
+    def test_finds_file_by_bvid_in_subfolder(self):
+        target = self.root / "作者A" / "BV1xx411c7mD_标题.mp4"
+        target.write_bytes(b"x")
+        found = bd.find_existing_media(self.root, "BV1xx411c7mD")
+        self.assertEqual(found, target)
+
+    def test_ignores_non_media_and_other_videos(self):
+        (self.root / "BV1xx411c7mD_标题.jpg").write_bytes(b"x")
+        (self.root / "BV1yy411c7mD_别的.mp4").write_bytes(b"x")
+        self.assertIsNone(bd.find_existing_media(self.root, "BV1xx411c7mD"))
+
+    def test_returns_none_without_match(self):
+        self.assertIsNone(bd.find_existing_media(self.root, "BV1zz411c7mD"))
+
+    def test_picks_newest_when_several_exist(self):
+        older = self.root / "BV1xx411c7mD_old.mp4"
+        newer = self.root / "BV1xx411c7mD_new.mp4"
+        older.write_bytes(b"1")
+        newer.write_bytes(b"2")
+        os.utime(older, (1_600_000_000, 1_600_000_000))
+        os.utime(newer, (1_700_000_000, 1_700_000_000))
+        self.assertEqual(bd.find_existing_media(self.root, "BV1xx411c7mD"), newer)
+
+
+class MediaHeightTests(unittest.TestCase):
+    def sample(self):
+        return (
+            b"Input #0, mov,mp4,m4a, from 'x.mp4':\n"
+            b"  Stream #0:0: Video: h264, yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], 30 fps\n"
+        )
+
+    def test_parses_height_from_ffmpeg_output(self):
+        proc = mock.Mock(returncode=1, stderr=self.sample())
+        with mock.patch.object(bd.subprocess, "run", return_value=proc):
+            self.assertEqual(bd.probe_media_height(Path("x.mp4"), "ffmpeg"), 1080)
+
+    def test_returns_none_when_ffmpeg_missing(self):
+        with mock.patch.object(bd.subprocess, "run", side_effect=OSError("no ffmpeg")):
+            self.assertIsNone(bd.probe_media_height(Path("x.mp4"), "ffmpeg"))
+
+    def test_returns_none_for_unparsable_output(self):
+        proc = mock.Mock(returncode=1, stderr=b"Invalid data found when processing input")
+        with mock.patch.object(bd.subprocess, "run", return_value=proc):
+            self.assertIsNone(bd.probe_media_height(Path("x.mp4"), "ffmpeg"))
+
+
+class OverwriteDecisionTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1] / ".tmp" / "overwrite-tests"
+        if self.root.exists():
+            shutil.rmtree(self.root, ignore_errors=True)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+
+    def downloader(self, quality="2160", force=False):
+        return bd.Downloader(
+            bd.argparse.Namespace(quality=quality, force=force),
+            self.root,
+            yt_dlp=object(),
+            download_error=Exception,
+            cookiefile=None,
+            ffmpeg_path="ffmpeg",
+        )
+
+    def make_media(self, name="BV1xx411c7mD_标题.mp4"):
+        path = self.root / name
+        path.write_bytes(b"x")
+        return path
+
+    def test_other_quality_is_saved_as_new_file(self):
+        self.make_media()
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 30.0)):
+            self.assertEqual(
+                self.downloader("2160")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("quality", "2160P"),
+            )
+
+    def test_lower_quality_also_saved_separately(self):
+        self.make_media()
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 30.0)):
+            self.assertEqual(
+                self.downloader("480")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("quality", "480P"),
+            )
+
+    def test_same_quality_is_skipped(self):
+        self.make_media()
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 30.0)):
+            self.assertEqual(
+                self.downloader("1080")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("skip", ""),
+            )
+
+    def test_force_starts_fresh_download(self):
+        self.make_media()
+        with mock.patch.object(bd, "probe_media_info", return_value=(480, 30.0)):
+            self.assertEqual(
+                self.downloader("2160", force=True)._plan(
+                    "https://www.bilibili.com/video/BV1xx411c7mD"
+                ),
+                ("fresh", ""),
+            )
+
+    def test_no_existing_file_means_normal_download(self):
+        with mock.patch.object(bd, "probe_media_info", return_value=(None, None)):
+            self.assertEqual(
+                self.downloader("2160")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("fresh", ""),
+            )
+
+    def test_best_quality_skips_when_anything_exists(self):
+        self.make_media()
+        with mock.patch.object(bd, "probe_media_info", return_value=(480, 30.0)):
+            self.assertEqual(
+                self.downloader("best")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("skip", ""),
+            )
+
+
+class QualityTemplateTests(unittest.TestCase):
+    def test_appends_quality_before_extension(self):
+        self.assertEqual(
+            bd.quality_outtmpl("%(id)s_%(title).80s.%(ext)s", "1080P"),
+            "%(id)s_%(title).80s_1080P.%(ext)s",
+        )
+
+    def test_keeps_author_folder(self):
+        self.assertEqual(
+            bd.quality_outtmpl("%(uploader)s/%(id)s_%(title).80s.%(ext)s", "480P"),
+            "%(uploader)s/%(id)s_%(title).80s_480P.%(ext)s",
+        )
+
+
+class QualityAliasTests(unittest.TestCase):
+    def test_60fps_alias_maps_to_qn(self):
+        self.assertEqual(bd.parse_quality_token("1080p60"), "116")
+        self.assertEqual(bd.parse_quality_token("720P60"), "74")
+
+    def test_plain_tokens_still_work(self):
+        self.assertEqual(bd.parse_quality_token("1080"), "1080")
+        self.assertEqual(bd.parse_quality_token("best"), "best")
+
+    def test_unknown_token_is_rejected(self):
+        with self.assertRaises(Exception):
+            bd.parse_quality_token("1080p120")
+
+    def test_quality_target_for_alias_includes_fps(self):
+        self.assertEqual(bd.quality_target("1080p60"), (1080, 60))
+
+    def test_quality_target_for_plain_quality(self):
+        self.assertEqual(bd.quality_target("2160"), (2160, None))
+
+    def test_quality_target_for_qn(self):
+        self.assertEqual(bd.quality_target("116"), (1080, 60))
+        self.assertEqual(bd.quality_target("80"), (1080, None))
+
+    def test_quality_target_for_best_is_none(self):
+        self.assertIsNone(bd.quality_target("best"))
+        self.assertIsNone(bd.quality_target(""))
+
+
+class MediaInfoTests(unittest.TestCase):
+    OUTPUT = (
+        b"  Stream #0:0: Video: h264, yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], "
+        b"59.94 fps, 59.94 tbr\n"
+    )
+
+    def test_returns_height_and_fps(self):
+        proc = mock.Mock(returncode=1, stderr=self.OUTPUT)
+        with mock.patch.object(bd.subprocess, "run", return_value=proc):
+            height, fps = bd.probe_media_info(Path("x.mp4"), "ffmpeg")
+        self.assertEqual(height, 1080)
+        self.assertAlmostEqual(fps, 59.94, places=2)
+
+    def test_height_only_output_still_parses(self):
+        proc = mock.Mock(returncode=1, stderr=b"  Stream #0:0: Video: h264, 1280x720, 25 fps\n")
+        with mock.patch.object(bd.subprocess, "run", return_value=proc):
+            self.assertEqual(bd.probe_media_info(Path("x.mp4"), "ffmpeg"), (720, 25.0))
+
+    def test_missing_ffmpeg_returns_none_tuple(self):
+        with mock.patch.object(bd.subprocess, "run", side_effect=OSError("no ffmpeg")):
+            self.assertEqual(bd.probe_media_info(Path("x.mp4"), "ffmpeg"), (None, None))
+
+
+class OverwriteFpsTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1] / ".tmp" / "overwrite-fps-tests"
+        if self.root.exists():
+            shutil.rmtree(self.root, ignore_errors=True)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        (self.root / "BV1xx411c7mD_标题.mp4").write_bytes(b"x")
+
+    def downloader(self, quality):
+        return bd.Downloader(
+            bd.argparse.Namespace(quality=quality, force=False),
+            self.root,
+            yt_dlp=object(),
+            download_error=Exception,
+            cookiefile=None,
+            ffmpeg_path="ffmpeg",
+        )
+
+    def test_same_height_but_lower_fps_is_downloaded_as_new_file(self):
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 30.0)):
+            self.assertEqual(
+                self.downloader("1080p60")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("quality", "1080P60"),
+            )
+
+    def test_same_height_and_fps_is_skipped(self):
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 59.94)):
+            self.assertEqual(
+                self.downloader("1080p60")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("skip", ""),
+            )
+
+    def test_non_60fps_request_ignores_fps(self):
+        with mock.patch.object(bd, "probe_media_info", return_value=(1080, 30.0)):
+            self.assertEqual(
+                self.downloader("1080")._plan("https://www.bilibili.com/video/BV1xx411c7mD"),
+                ("skip", ""),
+            )
 
 
 if __name__ == "__main__":

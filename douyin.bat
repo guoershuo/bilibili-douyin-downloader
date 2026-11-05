@@ -1,49 +1,31 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 chcp 65001 >nul
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" goto :check_global
-".venv\Scripts\python.exe" -c "import yt_dlp, websocket" >nul 2>nul
-if not errorlevel 1 goto :run_venv
-echo Virtual environment is missing dependencies. Running setup ...
-call setup.bat
-if errorlevel 1 exit /b 1
-if exist ".venv\Scripts\python.exe" goto :run_venv
+set "VENV_PY=%~dp0.venv\Scripts\python.exe"
+set "SCRIPT=%~dp0douyin_downloader.py"
 
-:check_global
-where python >nul 2>nul
-if errorlevel 1 goto :no_python
-python -c "import yt_dlp, websocket" >nul 2>nul
-if not errorlevel 1 goto :run_global
+rem 缺虚拟环境或依赖时就地安装，第一次双击也能直接跑。
+"%VENV_PY%" -c "import yt_dlp, websocket" >nul 2>&1
+if errorlevel 1 (
+    echo [环境] 正在准备虚拟环境与依赖，首次可能需要 1-2 分钟 ...
+    call "%~dp0setup.bat" /quiet
+    if errorlevel 1 goto :setup_failed
+)
 
-echo Installing dependencies for the first run ...
-call setup.bat
-if errorlevel 1 exit /b 1
-if exist ".venv\Scripts\python.exe" goto :run_venv
-python -c "import yt_dlp, websocket" >nul 2>nul
-if not errorlevel 1 goto :run_global
-echo Dependencies are still missing. Run setup.bat manually.
-pause
-exit /b 1
+if not exist "%VENV_PY%" goto :setup_failed
 
-:run_global
-python douyin_downloader.py %*
-goto :done
-
-:run_venv
-".venv\Scripts\python.exe" douyin_downloader.py %*
-goto :done
-
-:no_python
-echo Python was not found.
-echo Install Python 3.10 or newer and enable "Add Python to PATH".
-pause
-exit /b 1
-
-:done
+"%VENV_PY%" "%SCRIPT%" %*
 set "RC=%errorlevel%"
 if "%~1"=="" pause
 exit /b %RC%
+
+:setup_failed
+echo.
+echo [错误] 环境准备失败，无法运行。
+echo 请查看 setup.log，或手动运行 setup.bat 查看详细提示。
+pause
+exit /b 1

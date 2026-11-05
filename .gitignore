@@ -8,7 +8,17 @@ __pycache__/
 
 # 下载结果与本地 Cookie
 downloads/
+tools/ffmpeg.exe
+tools/ffprobe.exe
 .browser-profile/
 .douyin-archive.txt
 .bilibili-archive.txt
 cookies.txt
+bili-cookies-*/
+
+# 本地 Web 服务
+web.log
+web.log.*
+web.port
+web.port.probe
+setup.log
