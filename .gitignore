@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.deps/
+.tmp/
+*.whl
+
+# 下载结果与本地 Cookie
+downloads/
+.browser-profile/
+.douyin-archive.txt
+.bilibili-archive.txt
+cookies.txt
