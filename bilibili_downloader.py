@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import http.cookiejar
 import json
@@ -1593,6 +1594,8 @@ def prepare_cookiefile(path: Path | None) -> Path | None:
     source = Path(path)
     try:
         directory = Path(tempfile.mkdtemp(prefix="bili-cookies-"))
+        # 临时目录里是 Cookie 副本，进程结束时删掉，别留在磁盘上。
+        atexit.register(shutil.rmtree, directory, True)
         target = directory / COOKIE_FILE_NAME
         shutil.copyfile(source, target)
         return target
