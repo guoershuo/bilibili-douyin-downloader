@@ -1631,16 +1631,16 @@ class ExistingMediaTests(unittest.TestCase):
     def test_finds_file_by_bvid_in_subfolder(self):
         target = self.root / "作者A" / "BV1xx411c7mD_标题.mp4"
         target.write_bytes(b"x")
-        found = bd.find_existing_media(self.root, "BV1xx411c7mD")
-        self.assertEqual(found, target)
+        found = bd.find_existing_medias(self.root, "BV1xx411c7mD")
+        self.assertEqual(found, [target])
 
     def test_ignores_non_media_and_other_videos(self):
         (self.root / "BV1xx411c7mD_标题.jpg").write_bytes(b"x")
         (self.root / "BV1yy411c7mD_别的.mp4").write_bytes(b"x")
-        self.assertIsNone(bd.find_existing_media(self.root, "BV1xx411c7mD"))
+        self.assertEqual(bd.find_existing_medias(self.root, "BV1xx411c7mD"), [])
 
-    def test_returns_none_without_match(self):
-        self.assertIsNone(bd.find_existing_media(self.root, "BV1zz411c7mD"))
+    def test_returns_empty_without_match(self):
+        self.assertEqual(bd.find_existing_medias(self.root, "BV1zz411c7mD"), [])
 
     def test_picks_newest_when_several_exist(self):
         older = self.root / "BV1xx411c7mD_old.mp4"
@@ -1649,7 +1649,7 @@ class ExistingMediaTests(unittest.TestCase):
         newer.write_bytes(b"2")
         os.utime(older, (1_600_000_000, 1_600_000_000))
         os.utime(newer, (1_700_000_000, 1_700_000_000))
-        self.assertEqual(bd.find_existing_media(self.root, "BV1xx411c7mD"), newer)
+        self.assertEqual(bd.find_existing_medias(self.root, "BV1xx411c7mD")[0], newer)
 
 
 class MediaHeightTests(unittest.TestCase):
@@ -1662,16 +1662,16 @@ class MediaHeightTests(unittest.TestCase):
     def test_parses_height_from_ffmpeg_output(self):
         proc = mock.Mock(returncode=1, stderr=self.sample())
         with mock.patch.object(bd.subprocess, "run", return_value=proc):
-            self.assertEqual(bd.probe_media_height(Path("x.mp4"), "ffmpeg"), 1080)
+            self.assertEqual(bd.probe_media_info(Path("x.mp4"), "ffmpeg")[0], 1080)
 
     def test_returns_none_when_ffmpeg_missing(self):
         with mock.patch.object(bd.subprocess, "run", side_effect=OSError("no ffmpeg")):
-            self.assertIsNone(bd.probe_media_height(Path("x.mp4"), "ffmpeg"))
+            self.assertEqual(bd.probe_media_info(Path("x.mp4"), "ffmpeg"), (None, None))
 
     def test_returns_none_for_unparsable_output(self):
         proc = mock.Mock(returncode=1, stderr=b"Invalid data found when processing input")
         with mock.patch.object(bd.subprocess, "run", return_value=proc):
-            self.assertIsNone(bd.probe_media_height(Path("x.mp4"), "ffmpeg"))
+            self.assertEqual(bd.probe_media_info(Path("x.mp4"), "ffmpeg"), (None, None))
 
 
 class OverwriteDecisionTests(unittest.TestCase):

@@ -12,10 +12,8 @@
   --line: #e2e4e8;
   --line-strong: #c9cdd3;
   --blue: #4673a8;
-  --blue-deep: #345d8a;
   --blue-soft: #eff4fa;
   --green: #1d7b5b;
-  --green-soft: #eaf7f1;
   --amber: #9a681a;
   --amber-soft: #fff8eb;
   --red: #b64a39;
@@ -2107,9 +2105,6 @@ body[data-platform="douyin"] .quality-grid {
   }
   .page {
     padding: 0 24px;
-  }
-  .settings-row {
-    grid-template-columns: 1fr;
   }
   .notes {
     grid-template-columns: 1fr;

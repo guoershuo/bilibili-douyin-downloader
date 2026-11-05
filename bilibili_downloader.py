@@ -1479,12 +1479,6 @@ def find_existing_medias(output_dir: Path, video_id: str) -> list[Path]:
     return sorted(matched, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
-def find_existing_media(output_dir: Path, video_id: str) -> Path | None:
-    """在输出目录里找某个视频已经下载好的文件（作者分目录也找）。"""
-    medias = find_existing_medias(output_dir, video_id)
-    return medias[0] if medias else None
-
-
 def quality_outtmpl(template: str, label: str) -> str:
     """给文件名加清晰度后缀，避免不同清晰度互相覆盖。"""
     stem, separator, extension = template.rpartition(".")
@@ -1511,11 +1505,6 @@ def probe_media_info(
     heights = [int(match.group(2)) for match in re.finditer(r"(\d{2,5})x(\d{2,5})", text)]
     fps_values = [float(match.group(1)) for match in re.finditer(r"([\d.]+) fps", text)]
     return (max(heights) if heights else None), (max(fps_values) if fps_values else None)
-
-
-def probe_media_height(path: Path, ffmpeg_path: str | None = None) -> int | None:
-    """用 ffmpeg -i 读出已有视频的分辨率高度；读不到返回 None。"""
-    return probe_media_info(path, ffmpeg_path)[0]
 
 
 def build_ydl_options(
