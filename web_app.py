@@ -1222,14 +1222,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = parsed.path
         if path == "/api/health":
-            self._json(
-                {
-                    "app": "autodownloads-web",
-                    "version": APP_VERSION,
-                    "ok": True,
-                    "code": CODE_STAMP,
-                }
-            )
+            self._json(health_payload())
             return
         # Static files and the boot HTML must load without an API token. The
         # token is only required for data-changing / data-reading API routes.
@@ -1443,15 +1436,52 @@ def find_server_port(preferred: int) -> int:
     raise RuntimeError("找不到可用的本地端口")
 
 
-def existing_instance(port: int) -> bool:
+def instance_info(port: int) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(
             f"http://127.0.0.1:{port}/api/health", timeout=0.7
         ) as response:
             data = json.loads(response.read().decode("utf-8"))
-            return data.get("app") == "autodownloads-web"
     except (OSError, ValueError, urllib.error.URLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def existing_instance(port: int) -> bool:
+    """端口上是否已有同类服务，不管它来自哪个项目目录。"""
+    return instance_info(port).get("app") == "autodownloads-web"
+
+
+def own_instance(port: int) -> bool:
+    """端口上的实例是否属于当前项目目录，且能正常交出访问令牌。
+
+    目录被改名或搬走之后，旧实例仍在监听端口，但它已经读不到页面文件，
+    也拿不到令牌去关掉它；这种实例只能绕过，绝不能再复用。
+    """
+    info = instance_info(port)
+    if info.get("app") != "autodownloads-web":
         return False
+    if os.path.normcase(str(info.get("project") or "")) != os.path.normcase(str(PROJECT_DIR)):
+        return False
+    return bool(instance_token(port))
+
+
+def report_unusable_instance(port: int) -> None:
+    """端口被占着又没法复用时说清原因，免得看起来像启动失败。"""
+    info = instance_info(port)
+    if info.get("app") != "autodownloads-web":
+        return
+    project = str(info.get("project") or "未知目录")
+    if os.path.normcase(project) == os.path.normcase(str(PROJECT_DIR)):
+        safe_print(
+            f"端口 {port} 上的实例取自本目录，但已经打不开页面（页面文件或代码缺失），"
+            "未复用；本次改用新端口"
+        )
+        return
+    safe_print(
+        f"端口 {port} 上的实例来自另一个目录：{project}"
+        "（不复用也不停止），本次改用新端口启动"
+    )
 
 
 def write_port_file(port: int) -> None:
@@ -1493,7 +1523,7 @@ def find_running_instance(port: int) -> int | None:
         if candidate is not None and candidate not in candidates:
             candidates.append(candidate)
     for candidate in candidates:
-        if existing_instance(candidate):
+        if own_instance(candidate):
             return candidate
     return None
 
@@ -1518,6 +1548,17 @@ def code_stamp() -> str:
 
 # 进程启动时的代码指纹：健康检查要用它，而不是每次请求现算（现算永远等于磁盘）。
 CODE_STAMP = code_stamp()
+
+
+def health_payload() -> dict[str, Any]:
+    """健康检查响应。project 让调用方分清同名服务来自哪个项目目录。"""
+    return {
+        "app": "autodownloads-web",
+        "version": APP_VERSION,
+        "ok": True,
+        "code": CODE_STAMP,
+        "project": str(PROJECT_DIR),
+    }
 
 
 def instance_code_stamp(port: int) -> str:
@@ -1555,6 +1596,7 @@ def stop_stale_instance(port: int) -> bool:
     """代码更新后停掉还在跑的旧实例；返回 True 表示确实停掉了。"""
     running = find_running_instance(port)
     if running is None:
+        report_unusable_instance(port)
         return False
     stamp = instance_code_stamp(running)
     if stamp and stamp == code_stamp():

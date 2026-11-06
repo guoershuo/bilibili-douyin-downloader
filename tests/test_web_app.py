@@ -244,7 +244,7 @@ class PortFileTests(unittest.TestCase):
     def test_find_running_instance_prefers_recorded_port(self) -> None:
         web_app.write_port_file(8770)
         with mock.patch.object(
-            web_app, "existing_instance", side_effect=lambda port: port == 8770
+            web_app, "own_instance", side_effect=lambda port: port == 8770
         ) as probe:
             self.assertEqual(web_app.find_running_instance(8765), 8770)
         self.assertEqual(probe.call_count, 1)
@@ -252,13 +252,65 @@ class PortFileTests(unittest.TestCase):
     def test_find_running_instance_falls_back_to_base_port(self) -> None:
         web_app.write_port_file(8770)
         with mock.patch.object(
-            web_app, "existing_instance", side_effect=lambda port: port == 8765
+            web_app, "own_instance", side_effect=lambda port: port == 8765
         ):
             self.assertEqual(web_app.find_running_instance(8765), 8765)
 
     def test_find_running_instance_returns_none(self) -> None:
-        with mock.patch.object(web_app, "existing_instance", return_value=False):
+        with mock.patch.object(web_app, "own_instance", return_value=False):
             self.assertIsNone(web_app.find_running_instance(8765))
+
+
+class InstanceIdentityTests(unittest.TestCase):
+    """旧目录的实例、页面文件缺失的实例都不该被当成「已在运行」。"""
+
+    def test_health_payload_carries_project(self) -> None:
+        payload = web_app.health_payload()
+        self.assertEqual(payload["app"], "autodownloads-web")
+        self.assertEqual(payload["project"], str(web_app.PROJECT_DIR))
+
+    def test_own_instance_accepts_same_project_with_token(self) -> None:
+        info = {"app": "autodownloads-web", "project": str(web_app.PROJECT_DIR)}
+        with (
+            mock.patch.object(web_app, "instance_info", return_value=info),
+            mock.patch.object(web_app, "instance_token", return_value="tok"),
+        ):
+            self.assertTrue(web_app.own_instance(8765))
+
+    def test_own_instance_rejects_foreign_project(self) -> None:
+        info = {"app": "autodownloads-web", "project": "E:\\other\\autoDownloads"}
+        with (
+            mock.patch.object(web_app, "instance_info", return_value=info),
+            mock.patch.object(web_app, "instance_token", return_value="tok"),
+        ):
+            self.assertFalse(web_app.own_instance(8765))
+
+    def test_own_instance_rejects_instance_without_page(self) -> None:
+        # 目录被搬走后旧实例仍占着端口：健康检查通得过，但页面文件已丢失，
+        # 拿不到令牌就停不掉它，只能绕过。
+        info = {"app": "autodownloads-web", "project": str(web_app.PROJECT_DIR)}
+        with (
+            mock.patch.object(web_app, "instance_info", return_value=info),
+            mock.patch.object(web_app, "instance_token", return_value=""),
+        ):
+            self.assertFalse(web_app.own_instance(8765))
+
+    def test_existing_instance_still_sees_foreign_instance(self) -> None:
+        info = {"app": "autodownloads-web", "project": "E:\\other\\autoDownloads"}
+        with mock.patch.object(web_app, "instance_info", return_value=info):
+            self.assertTrue(web_app.existing_instance(8765))
+
+    def test_stop_reports_unusable_instance_and_keeps_it(self) -> None:
+        info = {"app": "autodownloads-web", "project": "E:\\other\\autoDownloads"}
+        out: list[str] = []
+        with (
+            mock.patch.object(web_app, "own_instance", return_value=False),
+            mock.patch.object(web_app, "instance_info", return_value=info),
+            mock.patch.object(web_app, "safe_print", side_effect=out.append),
+        ):
+            self.assertFalse(web_app.stop_stale_instance(8765))
+        self.assertEqual(len(out), 1)
+        self.assertIn("E:\\other\\autoDownloads", out[0])
 
 
 class ServerPortTests(unittest.TestCase):
