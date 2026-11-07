@@ -163,6 +163,16 @@ class CollectUrlsTests(unittest.TestCase):
             ],
         )
 
+    def test_bare_mid_line_becomes_space_url(self):
+        args = self.parse(["3546984120059960", "BV1wh4P6XEkC"])
+        self.assertEqual(
+            bd.collect_urls(args),
+            [
+                "https://space.bilibili.com/3546984120059960/video",
+                "https://www.bilibili.com/video/BV1wh4P6XEkC",
+            ],
+        )
+
     def test_parse_rate(self):
         self.assertEqual(bd.parse_rate("500K"), 500 * 1024)
         self.assertEqual(bd.parse_rate("1.5M"), int(1.5 * 1024 ** 2))

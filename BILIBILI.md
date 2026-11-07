@@ -135,8 +135,8 @@ bilibili.bat --quality 125 "<视频链接>"   :: 等价写法：真彩 HDR
 
 | 参数 | 说明 |
 | --- | --- |
-| `links ...` | 位置参数：BV/av 号、视频 URL、UP 主空间 URL、b23.tv 短链、分享文案（可多个） |
-| `--file FILE` | 从文本文件批量读链接（文件里可以有分享文案；裸 BV/av 号也能识别） |
+| `links ...` | 位置参数：BV/av 号、数字 mid、视频 URL、UP 主空间 URL、b23.tv 短链、分享文案（可多个） |
+| `--file FILE` | 从文本文件批量读链接（文件里可以有分享文案；裸 BV/av 号、数字 mid 也能识别） |
 | `-o, --output DIR` | 保存目录，默认 `downloads` |
 | `--up MID_OR_URL` | 指定 UP 主（数字 mid 或空间 URL） |
 | `--all` | 下载该 UP 主下面的全部视频 |
@@ -165,7 +165,7 @@ bilibili.bat --quality 125 "<视频链接>"   :: 等价写法：真彩 HDR
 
 ### UP 主枚举规则
 
-UP 主目标（空间链接或 `--up`）必须显式声明范围，避免误下整个账号：
+UP 主目标（空间链接、数字 mid 或 `--up`）必须显式声明范围，避免误下整个账号：
 
 ```bat
 bilibili.bat --up 3546984120059960 --all             :: 全部投稿

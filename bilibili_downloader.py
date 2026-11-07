@@ -391,6 +391,10 @@ def collect_urls(args: argparse.Namespace) -> list[str]:
             urls.append(video_url(bvid))
         elif extract_av_id(raw):
             urls.append(f"https://www.bilibili.com/video/av{extract_av_id(raw)}")
+        else:
+            mid = extract_mid(raw)
+            if mid:
+                urls.append(space_url(mid))
 
     unique: list[str] = []
     seen: set[str] = set()

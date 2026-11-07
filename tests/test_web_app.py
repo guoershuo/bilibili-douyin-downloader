@@ -33,7 +33,6 @@ class ArgvTests(unittest.TestCase):
             ["BV1", "BV2"],
             Path("D:/out"),
             "1080",
-            up="123",
             download_all=True,
             limit=5,
             folder_by_author=True,
@@ -48,8 +47,6 @@ class ArgvTests(unittest.TestCase):
                 "D:\\out",
                 "--quality",
                 "1080",
-                "--up",
-                "123",
                 "--all",
                 "--limit",
                 "5",
@@ -66,10 +63,9 @@ class ArgvTests(unittest.TestCase):
 
     def test_douyin_argv_adds_home_and_options(self) -> None:
         argv = web_app.build_douyin_argv(
-            ["https://v.douyin.com/x/"],
+            ["https://v.douyin.com/x/", "https://www.douyin.com/user/abc"],
             Path("D:/out"),
             "1080",
-            up="https://www.douyin.com/user/abc",
             download_all=True,
             limit=3,
             engine="browser",
@@ -86,7 +82,7 @@ class ArgvTests(unittest.TestCase):
 
     def test_douyin_does_not_duplicate_home(self) -> None:
         home = "https://www.douyin.com/user/abc"
-        argv = web_app.build_douyin_argv([home], Path("D:/out"), "best", up=home)
+        argv = web_app.build_douyin_argv([home, home], Path("D:/out"), "best")
         self.assertEqual(argv.count(home), 1)
 
 

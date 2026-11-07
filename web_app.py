@@ -622,7 +622,6 @@ def build_bilibili_argv(
     output_dir: Path,
     quality: str,
     *,
-    up: str = "",
     download_all: bool = False,
     limit: int = 0,
     folder_by_author: bool = False,
@@ -631,8 +630,6 @@ def build_bilibili_argv(
     limit_rate: str = "",
 ) -> list[str]:
     argv = ["-o", str(output_dir), "--quality", quality]
-    if up.strip():
-        argv += ["--up", up.strip()]
     if download_all:
         argv.append("--all")
     if limit > 0:
@@ -663,7 +660,6 @@ def build_douyin_argv(
     output_dir: Path,
     quality: str,
     *,
-    up: str = "",
     download_all: bool = False,
     limit: int = 0,
     folder_by_author: bool = False,
@@ -680,10 +676,6 @@ def build_douyin_argv(
         text = str(link).strip()
         if text and text not in targets:
             targets.append(text)
-    home = up.strip()
-    if home and home not in targets:
-        targets.append(home)
-
     argv = ["-o", str(output_dir), "--format", douyin_format(quality)]
     if engine in {"browser", "yt-dlp"}:
         argv += ["--engine", engine]
@@ -879,7 +871,6 @@ class JobManager:
         except (TypeError, ValueError):
             limit = 0
         common = {
-            "up": clean_text(options.get("up")),
             "download_all": bool(options.get("all")),
             "limit": limit,
             "folder_by_author": bool(options.get("folder_by_author")),

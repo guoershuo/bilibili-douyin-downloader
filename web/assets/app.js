@@ -43,18 +43,14 @@
 
   const PLATFORM_COPY = {
     bilibili: {
-      placeholder: "粘贴 B 站视频 / UP 主空间链接，一行一个；也可以直接粘贴分享文案。",
+      placeholder: "粘贴 B 站视频 / 合集 / UP 主空间链接或数字 mid，一行一个；也可以直接粘贴分享文案。",
       qualityHint: "4K / 2K 需要大会员，1080P 需要登录",
-      upLabel: "UP 主",
-      upPlaceholder: "mid 或空间链接（可选）",
       allLabel: "下载该 UP 主全部视频",
       loginName: "B 站",
     },
     douyin: {
       placeholder: "粘贴抖音视频 / 主页链接，一行一个；也可以直接粘贴分享文案。",
       qualityHint: "实际清晰度以平台返回为准",
-      upLabel: "用户主页",
-      upPlaceholder: "https://www.douyin.com/user/…（可选）",
       allLabel: "下载该主页全部作品",
       loginName: "抖音",
     },
@@ -96,7 +92,6 @@
       platform: state.platform,
       quality: { ...state.quality },
       output: el.output?.value || "",
-      up: el.up?.value || "",
       limit: el.limit?.value || "0",
       all: Boolean(el.all?.checked),
       folder_by_author: Boolean(el.folderByAuthor?.checked),
@@ -229,8 +224,6 @@
     el.qualityGrid = $("#qualityGrid");
     el.qualityHint = $("#qualityHint");
     el.output = $("#output");
-    el.up = $("#up");
-    el.upLabel = $("#upLabel");
     el.limit = $("#limit");
     el.all = $("#all");
     el.allLabel = $("#allLabel");
@@ -288,7 +281,6 @@
       }
     }
     if (el.output) el.output.value = settings.output || BOOT.defaultOutput || "";
-    if (el.up) el.up.value = settings.up || "";
     if (el.limit) el.limit.value = settings.limit || "0";
     if (el.all) el.all.checked = Boolean(settings.all);
     if (el.folderByAuthor) el.folderByAuthor.checked = Boolean(settings.folder_by_author);
@@ -343,8 +335,6 @@
     });
     if (el.links) el.links.placeholder = copy.placeholder;
     if (el.qualityHint) el.qualityHint.textContent = copy.qualityHint;
-    if (el.upLabel) el.upLabel.textContent = copy.upLabel;
-    if (el.up) el.up.placeholder = copy.upPlaceholder;
     if (el.allLabel) el.allLabel.textContent = copy.allLabel;
     $$(".douyin-only").forEach((node) => {
       node.hidden = state.platform !== "douyin";
@@ -560,7 +550,6 @@
 
   function collectOptions() {
     return {
-      up: el.up?.value.trim() || "",
       all: Boolean(el.all?.checked),
       limit: Number(el.limit?.value || 0),
       folder_by_author: Boolean(el.folderByAuthor?.checked),

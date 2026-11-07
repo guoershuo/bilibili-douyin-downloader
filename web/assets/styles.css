@@ -1437,6 +1437,7 @@ body[data-platform="douyin"] .quality-grid {
   font-family: var(--mono);
   font-size: 19px;
   font-weight: 400;
+  margin-left: 4px;
 }
 
 .percent-line.login-mode span {
